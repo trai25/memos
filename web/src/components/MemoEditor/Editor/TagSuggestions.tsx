@@ -1,26 +1,29 @@
-import classNames from "classnames";
+import clsx from "clsx";
+import Fuse from "fuse.js";
 import { useEffect, useRef, useState } from "react";
 import getCaretCoordinates from "textarea-caret";
-import { useTagStore } from "@/store/module";
+import OverflowTip from "@/components/kit/OverflowTip";
+import { useUserStatsTags } from "@/store/v1";
 import { EditorRefActions } from ".";
 
 type Props = {
   editorRef: React.RefObject<HTMLTextAreaElement>;
   editorActions: React.ForwardedRef<EditorRefActions>;
 };
+
 type Position = { left: number; top: number; height: number };
 
 const TagSuggestions = ({ editorRef, editorActions }: Props) => {
   const [position, setPosition] = useState<Position | null>(null);
-  const hide = () => setPosition(null);
-
-  const { state } = useTagStore();
-  const tagsRef = useRef(state.tags);
-  tagsRef.current = state.tags;
-
   const [selected, select] = useState(0);
   const selectedRef = useRef(selected);
   selectedRef.current = selected;
+  const tags = Object.entries(useUserStatsTags())
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .sort((a, b) => b[1] - a[1])
+    .map(([tag]) => tag);
+
+  const hide = () => setPosition(null);
 
   const getCurrentWord = (): [word: string, startIndex: number] => {
     const editor = editorRef.current;
@@ -33,9 +36,9 @@ const TagSuggestions = ({ editorRef, editorActions }: Props) => {
 
   const suggestionsRef = useRef<string[]>([]);
   suggestionsRef.current = (() => {
-    const partial = getCurrentWord()[0].slice(1).toLowerCase();
-    const matches = (str: string) => str.startsWith(partial) && partial.length < str.length;
-    return tagsRef.current.filter((tag) => matches(tag.toLowerCase())).slice(0, 5);
+    const search = getCurrentWord()[0].slice(1).toLowerCase();
+    const fuse = new Fuse(tags);
+    return fuse.search(search).map((result) => result.item);
   })();
 
   const isVisibleRef = useRef(false);
@@ -72,11 +75,17 @@ const TagSuggestions = ({ editorRef, editorActions }: Props) => {
   };
 
   const handleInput = () => {
-    if (!editorRef.current) return;
+    const editor = editorRef.current;
+    if (!editor) return;
+
     select(0);
     const [word, index] = getCurrentWord();
-    const isActive = word.startsWith("#") && !word.slice(1).includes("#");
-    isActive ? setPosition(getCaretCoordinates(editorRef.current, index)) : hide();
+    const currentChar = editor.value[editor.selectionEnd];
+    const isActive = word.startsWith("#") && currentChar !== "#";
+
+    const caretCordinates = getCaretCoordinates(editor, index);
+    caretCordinates.top -= editor.scrollTop;
+    isActive ? setPosition(caretCordinates) : hide();
   };
 
   const listenersAreRegisteredRef = useRef(false);
@@ -94,19 +103,19 @@ const TagSuggestions = ({ editorRef, editorActions }: Props) => {
   if (!isVisibleRef.current || !position) return null;
   return (
     <div
-      className="z-20 p-1 mt-1 -ml-2 absolute max-w-[12rem] rounded font-mono shadow bg-zinc-200 dark:bg-zinc-600"
+      className="z-20 p-1 mt-1 -ml-2 absolute max-w-[12rem] gap-px rounded font-mono flex flex-col justify-start items-start overflow-auto shadow bg-zinc-100 dark:bg-zinc-700"
       style={{ left: position.left, top: position.top + position.height }}
     >
       {suggestionsRef.current.map((tag, i) => (
         <div
           key={tag}
           onMouseDown={() => autocomplete(tag)}
-          className={classNames(
-            "rounded p-1 px-2 w-full truncate text-sm dark:text-gray-300 cursor-pointer hover:bg-zinc-300 dark:hover:bg-zinc-700",
-            i === selected ? "bg-zinc-300 dark:bg-zinc-700" : ""
+          className={clsx(
+            "rounded p-1 px-2 w-full truncate text-sm dark:text-gray-300 cursor-pointer hover:bg-zinc-200 dark:hover:bg-zinc-800",
+            i === selected ? "bg-zinc-300 dark:bg-zinc-600" : "",
           )}
         >
-          #{tag}
+          <OverflowTip>#{tag}</OverflowTip>
         </div>
       ))}
     </div>
