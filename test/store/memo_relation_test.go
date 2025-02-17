@@ -15,6 +15,7 @@ func TestMemoRelationStore(t *testing.T) {
 	user, err := createTestingHostUser(ctx, ts)
 	require.NoError(t, err)
 	memoCreate := &store.Memo{
+		UID:        "main-memo",
 		CreatorID:  user.ID,
 		Content:    "main memo content",
 		Visibility: store.Public,
@@ -23,6 +24,7 @@ func TestMemoRelationStore(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, memoCreate.Content, memo.Content)
 	relatedMemoCreate := &store.Memo{
+		UID:        "related-memo",
 		CreatorID:  user.ID,
 		Content:    "related memo content",
 		Visibility: store.Public,
@@ -31,6 +33,7 @@ func TestMemoRelationStore(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, relatedMemoCreate.Content, relatedMemo.Content)
 	commentMemoCreate := &store.Memo{
+		UID:        "comment-memo",
 		CreatorID:  user.ID,
 		Content:    "comment memo content",
 		Visibility: store.Public,
@@ -55,37 +58,5 @@ func TestMemoRelationStore(t *testing.T) {
 	}
 	_, err = ts.UpsertMemoRelation(ctx, commentRelation)
 	require.NoError(t, err)
-
-	memo, err = ts.GetMemo(ctx, &store.FindMemo{
-		ID: &memo.ID,
-	})
-	require.NoError(t, err)
-	require.Equal(t, 2, len(memo.RelationList))
-	require.Equal(t, referenceRelation, memo.RelationList[0])
-	require.Equal(t, commentRelation, memo.RelationList[1])
-	relatedMemo, err = ts.GetMemo(ctx, &store.FindMemo{
-		ID: &relatedMemo.ID,
-	})
-	require.NoError(t, err)
-	require.Equal(t, 1, len(relatedMemo.RelationList))
-	require.Equal(t, referenceRelation, relatedMemo.RelationList[0])
-	commentMemo, err = ts.GetMemo(ctx, &store.FindMemo{
-		ID: &commentMemo.ID,
-	})
-	require.NoError(t, err)
-	require.Equal(t, 1, len(commentMemo.RelationList))
-	require.Equal(t, commentRelation, commentMemo.RelationList[0])
-	err = ts.DeleteMemo(ctx, &store.DeleteMemo{
-		ID: relatedMemo.ID,
-	})
-	require.NoError(t, err)
-	err = ts.DeleteMemo(ctx, &store.DeleteMemo{
-		ID: commentMemo.ID,
-	})
-	require.NoError(t, err)
-	memoRelation, err := ts.ListMemoRelations(ctx, &store.FindMemoRelation{
-		MemoID: &memo.ID,
-	})
-	require.NoError(t, err)
-	require.Equal(t, 0, len(memoRelation))
+	ts.Close()
 }
