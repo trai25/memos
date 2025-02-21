@@ -1,195 +1,101 @@
-import { Button, Checkbox, Divider, Input } from "@mui/joy";
+import { Divider } from "@mui/joy";
+import { Button } from "@usememos/mui";
 import { useEffect, useState } from "react";
 import { toast } from "react-hot-toast";
 import { Link } from "react-router-dom";
-import AppearanceSelect from "@/components/AppearanceSelect";
-import LocaleSelect from "@/components/LocaleSelect";
-import * as api from "@/helpers/api";
+import AuthFooter from "@/components/AuthFooter";
+import PasswordSignInForm from "@/components/PasswordSignInForm";
+import { identityProviderServiceClient } from "@/grpcweb";
 import { absolutifyLink } from "@/helpers/utils";
-import useLoading from "@/hooks/useLoading";
-import { useGlobalStore, useUserStore } from "@/store/module";
+import useCurrentUser from "@/hooks/useCurrentUser";
+import { Routes } from "@/router";
+import { extractIdentityProviderIdFromName } from "@/store/v1";
+import { workspaceStore } from "@/store/v2";
+import { IdentityProvider, IdentityProvider_Type } from "@/types/proto/api/v1/idp_service";
 import { useTranslate } from "@/utils/i18n";
 
 const SignIn = () => {
   const t = useTranslate();
-  const globalStore = useGlobalStore();
-  const userStore = useUserStore();
-  const actionBtnLoadingState = useLoading(false);
-  const { appearance, locale, systemStatus } = globalStore.state;
-  const mode = systemStatus.profile.mode;
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [remember, setRemember] = useState(true);
-  const disablePasswordLogin = systemStatus.disablePasswordLogin;
+  const currentUser = useCurrentUser();
   const [identityProviderList, setIdentityProviderList] = useState<IdentityProvider[]>([]);
+  const workspaceGeneralSetting = workspaceStore.state.generalSetting;
 
+  // Redirect to root page if already signed in.
+  useEffect(() => {
+    if (currentUser) {
+      window.location.href = Routes.ROOT;
+    }
+  }, []);
+
+  // Prepare identity provider list.
   useEffect(() => {
     const fetchIdentityProviderList = async () => {
-      const { data: identityProviderList } = await api.getIdentityProviderList();
-      setIdentityProviderList(identityProviderList);
+      const { identityProviders } = await identityProviderServiceClient.listIdentityProviders({});
+      setIdentityProviderList(identityProviders);
     };
     fetchIdentityProviderList();
   }, []);
 
-  useEffect(() => {
-    if (mode === "demo") {
-      setUsername("memos-demo");
-      setPassword("secret");
-    }
-  }, [mode]);
-
-  const handleUsernameInputChanged = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const text = e.target.value as string;
-    setUsername(text);
-  };
-
-  const handlePasswordInputChanged = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const text = e.target.value as string;
-    setPassword(text);
-  };
-
-  const handleLocaleSelectChange = (locale: Locale) => {
-    globalStore.setLocale(locale);
-  };
-
-  const handleAppearanceSelectChange = (appearance: Appearance) => {
-    globalStore.setAppearance(appearance);
-  };
-
-  const handleFormSubmit = (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    handleSignInButtonClick();
-  };
-
-  const handleSignInButtonClick = async () => {
-    if (username === "" || password === "") {
-      return;
-    }
-
-    if (actionBtnLoadingState.isLoading) {
-      return;
-    }
-
-    try {
-      actionBtnLoadingState.setLoading();
-      await api.signin(username, password, remember);
-      const user = await userStore.doSignIn();
-      if (user) {
-        window.location.href = "/";
-      } else {
-        toast.error(t("message.login-failed"));
-      }
-    } catch (error: any) {
-      console.error(error);
-      toast.error(error.response.data.message || t("message.login-failed"));
-    }
-    actionBtnLoadingState.setFinish();
-  };
-
   const handleSignInWithIdentityProvider = async (identityProvider: IdentityProvider) => {
-    const stateQueryParameter = `auth.signin.${identityProvider.name}-${identityProvider.id}`;
-    if (identityProvider.type === "OAUTH2") {
+    const stateQueryParameter = `auth.signin.${identityProvider.title}-${extractIdentityProviderIdFromName(identityProvider.name)}`;
+    if (identityProvider.type === IdentityProvider_Type.OAUTH2) {
       const redirectUri = absolutifyLink("/auth/callback");
-      const oauth2Config = identityProvider.config.oauth2Config;
+      const oauth2Config = identityProvider.config?.oauth2Config;
+      if (!oauth2Config) {
+        toast.error("Identity provider configuration is invalid.");
+        return;
+      }
       const authUrl = `${oauth2Config.authUrl}?client_id=${
         oauth2Config.clientId
       }&redirect_uri=${redirectUri}&state=${stateQueryParameter}&response_type=code&scope=${encodeURIComponent(
-        oauth2Config.scopes.join(" ")
+        oauth2Config.scopes.join(" "),
       )}`;
       window.location.href = authUrl;
     }
   };
 
   return (
-    <div className="flex flex-row justify-center items-center w-full h-full dark:bg-zinc-800">
-      <div className="w-80 max-w-full h-full py-4 flex flex-col justify-start items-center">
-        <div className="w-full py-4 grow flex flex-col justify-center items-center">
-          <div className="w-full flex flex-row justify-center items-center mb-6">
-            <img className="h-14 w-auto rounded-full shadow" src={systemStatus.customizedProfile.logoUrl} alt="" />
-            <p className="ml-2 text-5xl text-black opacity-80 dark:text-gray-200">{systemStatus.customizedProfile.name}</p>
-          </div>
-          {!disablePasswordLogin && (
-            <>
-              <form className="w-full mt-2" onSubmit={handleFormSubmit}>
-                <div className="flex flex-col justify-start items-start w-full gap-4">
-                  <div className="w-full flex flex-col justify-start items-start gap-2">
-                    <span className="leading-8 text-gray-600">{t("common.username")}</span>
-                    <Input
-                      className="w-full"
-                      size="lg"
-                      type="text"
-                      readOnly={actionBtnLoadingState.isLoading}
-                      placeholder={t("common.username")}
-                      value={username}
-                      onChange={handleUsernameInputChanged}
-                      required
-                    />
-                  </div>
-                  <div className="w-full flex flex-col justify-start items-start gap-2">
-                    <span className="leading-8 text-gray-600">{t("common.password")}</span>
-                    <Input
-                      className="w-full"
-                      size="lg"
-                      type="password"
-                      readOnly={actionBtnLoadingState.isLoading}
-                      placeholder={t("common.password")}
-                      value={password}
-                      onChange={handlePasswordInputChanged}
-                      required
-                    />
-                  </div>
-                </div>
-                <div className="flex flex-row justify-start items-center w-full mt-6">
-                  <Checkbox label={t("common.remember-me")} checked={remember} onChange={(e) => setRemember(e.target.checked)} />
-                </div>
-                <div className="flex flex-row justify-end items-center w-full mt-6">
-                  <Button
-                    className="w-full"
-                    size="md"
-                    type="submit"
-                    disabled={actionBtnLoadingState.isLoading}
-                    loading={actionBtnLoadingState.isLoading}
-                    onClick={handleSignInButtonClick}
-                  >
-                    {t("common.sign-in")}
-                  </Button>
-                </div>
-              </form>
-              {systemStatus.allowSignUp && (
-                <p className="w-full mt-4 text-sm">
-                  <span className="dark:text-gray-500">{t("auth.sign-up-tip")}</span>
-                  <Link to="/auth/signup" className="cursor-pointer ml-2 text-blue-600 hover:underline">
-                    {t("common.sign-up")}
-                  </Link>
-                </p>
-              )}
-            </>
-          )}
-          {identityProviderList.length > 0 && (
-            <>
-              {!disablePasswordLogin && <Divider className="!my-4">{t("common.or")}</Divider>}
-              <div className="w-full flex flex-col space-y-2">
-                {identityProviderList.map((identityProvider) => (
-                  <Button
-                    key={identityProvider.id}
-                    variant="outlined"
-                    color="neutral"
-                    className="w-full"
-                    size="md"
-                    onClick={() => handleSignInWithIdentityProvider(identityProvider)}
-                  >
-                    {t("common.sign-in-with", { provider: identityProvider.name })}
-                  </Button>
-                ))}
-              </div>
-            </>
-          )}
+    <div className="py-4 sm:py-8 w-80 max-w-full min-h-[100svh] mx-auto flex flex-col justify-start items-center">
+      <div className="w-full py-4 grow flex flex-col justify-center items-center">
+        <div className="w-full flex flex-row justify-center items-center mb-6">
+          <img className="h-14 w-auto rounded-full shadow" src={workspaceGeneralSetting.customProfile?.logoUrl || "/logo.webp"} alt="" />
+          <p className="ml-2 text-5xl text-black opacity-80 dark:text-gray-200">
+            {workspaceGeneralSetting.customProfile?.title || "Memos"}
+          </p>
         </div>
-        <div className="flex flex-row items-center justify-center w-full gap-2">
-          <LocaleSelect value={locale} onChange={handleLocaleSelectChange} />
-          <AppearanceSelect value={appearance} onChange={handleAppearanceSelectChange} />
-        </div>
+        {!workspaceGeneralSetting.disallowPasswordAuth ? (
+          <PasswordSignInForm />
+        ) : (
+          <p className="w-full text-2xl mt-2 dark:text-gray-500">Password auth is not allowed.</p>
+        )}
+        {!workspaceGeneralSetting.disallowUserRegistration && !workspaceGeneralSetting.disallowPasswordAuth && (
+          <p className="w-full mt-4 text-sm">
+            <span className="dark:text-gray-500">{t("auth.sign-up-tip")}</span>
+            <Link to="/auth/signup" className="cursor-pointer ml-2 text-blue-600 hover:underline" viewTransition>
+              {t("common.sign-up")}
+            </Link>
+          </p>
+        )}
+        {identityProviderList.length > 0 && (
+          <>
+            <Divider className="!my-4">{t("common.or")}</Divider>
+            <div className="w-full flex flex-col space-y-2">
+              {identityProviderList.map((identityProvider) => (
+                <Button
+                  className="bg-white dark:bg-black"
+                  key={identityProvider.name}
+                  variant="outlined"
+                  fullWidth
+                  onClick={() => handleSignInWithIdentityProvider(identityProvider)}
+                >
+                  {t("common.sign-in-with", { provider: identityProvider.title })}
+                </Button>
+              ))}
+            </div>
+          </>
+        )}
       </div>
+      <AuthFooter />
     </div>
   );
 };
