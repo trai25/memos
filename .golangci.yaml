@@ -18,15 +18,9 @@ linters:
     - bodyclose
 
 issues:
-  include:
-    # https://golangci-lint.run/usage/configuration/#command-line-options
   exclude:
     - Rollback
-    - logger.Sync
-    - pgInstance.Stop
     - fmt.Printf
-    - Enter(.*)_(.*)
-    - Exit(.*)_(.*)
 
 linters-settings:
   goimports:
@@ -66,6 +60,18 @@ linters-settings:
       - name: import-shadowing
         disabled: true
       - name: early-return
+        disabled: true
+      - name: use-any
+        disabled: true
+      - name: exported
+        disabled: true
+      - name: unhandled-error
+        disabled: true
+      - name: if-return
+        disabled: true
+      - name: max-control-nesting
+        disabled: true
+      - name: redefines-builtin-id
         disabled: true
   gocritic:
     disabled-checks:
