@@ -1,118 +1,181 @@
-import { lazy } from "react";
-import { createBrowserRouter, redirect } from "react-router-dom";
+import { Suspense, lazy } from "react";
+import { createBrowserRouter } from "react-router-dom";
 import App from "@/App";
-import { initialGlobalState, initialUserState } from "@/store/module";
+import HomeLayout from "@/layouts/HomeLayout";
+import RootLayout from "@/layouts/RootLayout";
+import Home from "@/pages/Home";
+import Loading from "@/pages/Loading";
 
-const Root = lazy(() => import("@/layouts/Root"));
-const SignIn = lazy(() => import("@/pages/SignIn"));
-const SignUp = lazy(() => import("@/pages/SignUp"));
+const AdminSignIn = lazy(() => import("@/pages/AdminSignIn"));
+const Archived = lazy(() => import("@/pages/Archived"));
 const AuthCallback = lazy(() => import("@/pages/AuthCallback"));
 const Explore = lazy(() => import("@/pages/Explore"));
-const Home = lazy(() => import("@/pages/Home"));
-const UserProfile = lazy(() => import("@/pages/UserProfile"));
+const Inboxes = lazy(() => import("@/pages/Inboxes"));
 const MemoDetail = lazy(() => import("@/pages/MemoDetail"));
-const EmbedMemo = lazy(() => import("@/pages/EmbedMemo"));
-const Archived = lazy(() => import("@/pages/Archived"));
-const DailyReview = lazy(() => import("@/pages/DailyReview"));
+const NotFound = lazy(() => import("@/pages/NotFound"));
+const PermissionDenied = lazy(() => import("@/pages/PermissionDenied"));
 const Resources = lazy(() => import("@/pages/Resources"));
 const Setting = lazy(() => import("@/pages/Setting"));
-const NotFound = lazy(() => import("@/pages/NotFound"));
+const SignIn = lazy(() => import("@/pages/SignIn"));
+const SignUp = lazy(() => import("@/pages/SignUp"));
+const UserProfile = lazy(() => import("@/pages/UserProfile"));
+const MemoDetailRedirect = lazy(() => import("./MemoDetailRedirect"));
 
-const initialGlobalStateLoader = async () => {
-  try {
-    await initialGlobalState();
-  } catch (error) {
-    // do nth
-  }
-  return null;
-};
-
-const initialUserStateLoader = async (redirectWhenNotFound = true) => {
-  let user = undefined;
-  try {
-    user = await initialUserState();
-  } catch (error) {
-    // do nothing.
-  }
-
-  if (!user && redirectWhenNotFound) {
-    return redirect("/explore");
-  }
-  return null;
-};
+export enum Routes {
+  ROOT = "/",
+  RESOURCES = "/resources",
+  INBOX = "/inbox",
+  ARCHIVED = "/archived",
+  SETTING = "/setting",
+  EXPLORE = "/explore",
+  AUTH = "/auth",
+}
 
 const router = createBrowserRouter([
   {
     path: "/",
     element: <App />,
-    loader: () => initialGlobalStateLoader(),
     children: [
       {
-        path: "/auth",
-        element: <SignIn />,
-      },
-      {
-        path: "/auth/signup",
-        element: <SignUp />,
-      },
-      {
-        path: "/auth/callback",
-        element: <AuthCallback />,
-      },
-      {
-        path: "/",
-        element: <Root />,
+        path: Routes.AUTH,
         children: [
           {
             path: "",
-            element: <Home />,
-            loader: () => initialUserStateLoader(),
+            element: (
+              <Suspense fallback={<Loading />}>
+                <SignIn />
+              </Suspense>
+            ),
           },
           {
-            path: "explore",
-            element: <Explore />,
-            loader: () => initialUserStateLoader(false),
+            path: "admin",
+            element: (
+              <Suspense fallback={<Loading />}>
+                <AdminSignIn />
+              </Suspense>
+            ),
           },
           {
-            path: "review",
-            element: <DailyReview />,
-            loader: () => initialUserStateLoader(),
+            path: "signup",
+            element: (
+              <Suspense fallback={<Loading />}>
+                <SignUp />
+              </Suspense>
+            ),
           },
           {
-            path: "resources",
-            element: <Resources />,
-            loader: () => initialUserStateLoader(),
-          },
-          {
-            path: "archived",
-            element: <Archived />,
-            loader: () => initialUserStateLoader(),
-          },
-          {
-            path: "setting",
-            element: <Setting />,
-            loader: () => initialUserStateLoader(),
+            path: "callback",
+            element: (
+              <Suspense fallback={<Loading />}>
+                <AuthCallback />
+              </Suspense>
+            ),
           },
         ],
       },
       {
-        path: "/m/:memoId",
-        element: <MemoDetail />,
-        loader: () => initialUserStateLoader(false),
-      },
-      {
-        path: "/m/:memoId/embed",
-        element: <EmbedMemo />,
-        loader: () => initialUserStateLoader(false),
-      },
-      {
-        path: "/u/:username",
-        element: <UserProfile />,
-        loader: () => initialUserStateLoader(false),
-      },
-      {
-        path: "*",
-        element: <NotFound />,
+        path: Routes.ROOT,
+        element: <RootLayout />,
+        children: [
+          {
+            element: <HomeLayout />,
+            children: [
+              {
+                path: "",
+                element: <Home />,
+              },
+              {
+                path: Routes.EXPLORE,
+                element: (
+                  <Suspense fallback={<Loading />}>
+                    <Explore />
+                  </Suspense>
+                ),
+              },
+              {
+                path: Routes.ARCHIVED,
+                element: (
+                  <Suspense fallback={<Loading />}>
+                    <Archived />
+                  </Suspense>
+                ),
+              },
+              {
+                path: "u/:username",
+                element: (
+                  <Suspense fallback={<Loading />}>
+                    <UserProfile />
+                  </Suspense>
+                ),
+              },
+            ],
+          },
+          {
+            path: Routes.RESOURCES,
+            element: (
+              <Suspense fallback={<Loading />}>
+                <Resources />
+              </Suspense>
+            ),
+          },
+          {
+            path: Routes.INBOX,
+            element: (
+              <Suspense fallback={<Loading />}>
+                <Inboxes />
+              </Suspense>
+            ),
+          },
+          {
+            path: Routes.SETTING,
+            element: (
+              <Suspense fallback={<Loading />}>
+                <Setting />
+              </Suspense>
+            ),
+          },
+          {
+            path: "memos/:uid",
+            element: (
+              <Suspense fallback={<Loading />}>
+                <MemoDetail />
+              </Suspense>
+            ),
+          },
+          // Redirect old path to new path.
+          {
+            path: "m/:uid",
+            element: (
+              <Suspense fallback={<Loading />}>
+                <MemoDetailRedirect />
+              </Suspense>
+            ),
+          },
+          {
+            path: "403",
+            element: (
+              <Suspense fallback={<Loading />}>
+                <PermissionDenied />
+              </Suspense>
+            ),
+          },
+          {
+            path: "404",
+            element: (
+              <Suspense fallback={<Loading />}>
+                <NotFound />
+              </Suspense>
+            ),
+          },
+          {
+            path: "*",
+            element: (
+              <Suspense fallback={<Loading />}>
+                <NotFound />
+              </Suspense>
+            ),
+          },
+        ],
       },
     ],
   },
