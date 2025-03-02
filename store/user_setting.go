@@ -3,46 +3,72 @@ package store
 import (
 	"context"
 
+	"github.com/pkg/errors"
+	"google.golang.org/protobuf/encoding/protojson"
+
 	storepb "github.com/usememos/memos/proto/gen/store"
 )
 
 type UserSetting struct {
 	UserID int32
-	Key    string
+	Key    storepb.UserSettingKey
 	Value  string
 }
 
 type FindUserSetting struct {
 	UserID *int32
-	Key    string
+	Key    storepb.UserSettingKey
 }
 
-func (s *Store) UpsertUserSetting(ctx context.Context, upsert *UserSetting) (*UserSetting, error) {
-	userSetting, err := s.driver.UpsertUserSetting(ctx, upsert)
+func (s *Store) UpsertUserSetting(ctx context.Context, upsert *storepb.UserSetting) (*storepb.UserSetting, error) {
+	userSettingRaw, err := convertUserSettingToRaw(upsert)
+	if err != nil {
+		return nil, err
+	}
+	userSettingRaw, err = s.driver.UpsertUserSetting(ctx, userSettingRaw)
 	if err != nil {
 		return nil, err
 	}
 
-	s.userSettingCache.Store(getUserSettingCacheKey(userSetting.UserID, userSetting.Key), userSetting)
+	userSetting, err := convertUserSettingFromRaw(userSettingRaw)
+	if err != nil {
+		return nil, err
+	}
+	if userSetting == nil {
+		return nil, errors.New("unexpected nil user setting")
+	}
+	s.userSettingCache.Store(getUserSettingCacheKey(userSetting.UserId, userSetting.Key.String()), userSetting)
 	return userSetting, nil
 }
 
-func (s *Store) ListUserSettings(ctx context.Context, find *FindUserSetting) ([]*UserSetting, error) {
-	userSettingList, err := s.driver.ListUserSettings(ctx, find)
+func (s *Store) ListUserSettings(ctx context.Context, find *FindUserSetting) ([]*storepb.UserSetting, error) {
+	userSettingRawList, err := s.driver.ListUserSettings(ctx, find)
 	if err != nil {
 		return nil, err
 	}
 
-	for _, userSetting := range userSettingList {
-		s.userSettingCache.Store(getUserSettingCacheKey(userSetting.UserID, userSetting.Key), userSetting)
+	userSettings := []*storepb.UserSetting{}
+	for _, userSettingRaw := range userSettingRawList {
+		userSetting, err := convertUserSettingFromRaw(userSettingRaw)
+		if err != nil {
+			return nil, err
+		}
+		if userSetting == nil {
+			continue
+		}
+		s.userSettingCache.Store(getUserSettingCacheKey(userSetting.UserId, userSetting.Key.String()), userSetting)
+		userSettings = append(userSettings, userSetting)
 	}
-	return userSettingList, nil
+	return userSettings, nil
 }
 
-func (s *Store) GetUserSetting(ctx context.Context, find *FindUserSetting) (*UserSetting, error) {
+func (s *Store) GetUserSetting(ctx context.Context, find *FindUserSetting) (*storepb.UserSetting, error) {
 	if find.UserID != nil {
-		if cache, ok := s.userSettingCache.Load(getUserSettingCacheKey(*find.UserID, find.Key)); ok {
-			return cache.(*UserSetting), nil
+		if cache, ok := s.userSettingCache.Load(getUserSettingCacheKey(*find.UserID, find.Key.String())); ok {
+			userSetting, ok := cache.(*storepb.UserSetting)
+			if ok {
+				return userSetting, nil
+			}
 		}
 	}
 
@@ -50,68 +76,23 @@ func (s *Store) GetUserSetting(ctx context.Context, find *FindUserSetting) (*Use
 	if err != nil {
 		return nil, err
 	}
-
 	if len(list) == 0 {
 		return nil, nil
 	}
-
-	userSetting := list[0]
-	return userSetting, nil
-}
-
-type FindUserSettingV1 struct {
-	UserID *int32
-	Key    storepb.UserSettingKey
-}
-
-func (s *Store) UpsertUserSettingV1(ctx context.Context, upsert *storepb.UserSetting) (*storepb.UserSetting, error) {
-	userSettingMessage, err := s.driver.UpsertUserSettingV1(ctx, upsert)
-	if err != nil {
-		return nil, err
-	}
-
-	s.userSettingCache.Store(getUserSettingV1CacheKey(userSettingMessage.UserId, userSettingMessage.Key.String()), userSettingMessage)
-	return userSettingMessage, nil
-}
-
-func (s *Store) ListUserSettingsV1(ctx context.Context, find *FindUserSettingV1) ([]*storepb.UserSetting, error) {
-	userSettingList, err := s.driver.ListUserSettingsV1(ctx, find)
-	if err != nil {
-		return nil, err
-	}
-
-	for _, userSetting := range userSettingList {
-		s.userSettingCache.Store(getUserSettingV1CacheKey(userSetting.UserId, userSetting.Key.String()), userSetting)
-	}
-	return userSettingList, nil
-}
-
-func (s *Store) GetUserSettingV1(ctx context.Context, find *FindUserSettingV1) (*storepb.UserSetting, error) {
-	if find.UserID != nil {
-		if cache, ok := s.userSettingCache.Load(getUserSettingV1CacheKey(*find.UserID, find.Key.String())); ok {
-			return cache.(*storepb.UserSetting), nil
-		}
-	}
-
-	list, err := s.ListUserSettingsV1(ctx, find)
-	if err != nil {
-		return nil, err
-	}
-
-	if len(list) == 0 {
-		return nil, nil
+	if len(list) > 1 {
+		return nil, errors.Errorf("expected 1 user setting, but got %d", len(list))
 	}
 
 	userSetting := list[0]
-	s.userSettingCache.Store(getUserSettingV1CacheKey(userSetting.UserId, userSetting.Key.String()), userSetting)
+	s.userSettingCache.Store(getUserSettingCacheKey(userSetting.UserId, userSetting.Key.String()), userSetting)
 	return userSetting, nil
 }
 
 // GetUserAccessTokens returns the access tokens of the user.
 func (s *Store) GetUserAccessTokens(ctx context.Context, userID int32) ([]*storepb.AccessTokensUserSetting_AccessToken, error) {
-	userSetting, err := s.GetUserSettingV1(ctx, &FindUserSettingV1{
+	userSetting, err := s.GetUserSetting(ctx, &FindUserSetting{
 		UserID: &userID,
-		Key:    storepb.UserSettingKey_USER_SETTING_ACCESS_TOKENS,
+		Key:    storepb.UserSettingKey_ACCESS_TOKENS,
 	})
 	if err != nil {
 		return nil, err
@@ -122,4 +103,95 @@ func (s *Store) GetUserAccessTokens(ctx context.Context, userID int32) ([]*store
 
 	accessTokensUserSetting := userSetting.GetAccessTokens()
 	return accessTokensUserSetting.AccessTokens, nil
+}
+
+// RemoveUserAccessToken remove the access token of the user.
+func (s *Store) RemoveUserAccessToken(ctx context.Context, userID int32, token string) error {
+	oldAccessTokens, err := s.GetUserAccessTokens(ctx, userID)
+	if err != nil {
+		return err
+	}
+
+	newAccessTokens := make([]*storepb.AccessTokensUserSetting_AccessToken, 0, len(oldAccessTokens))
+	for _, t := range oldAccessTokens {
+		if token != t.AccessToken {
+			newAccessTokens = append(newAccessTokens, t)
+		}
+	}
+
+	_, err = s.UpsertUserSetting(ctx, &storepb.UserSetting{
+		UserId: userID,
+		Key:    storepb.UserSettingKey_ACCESS_TOKENS,
+		Value: &storepb.UserSetting_AccessTokens{
+			AccessTokens: &storepb.AccessTokensUserSetting{
+				AccessTokens: newAccessTokens,
+			},
+		},
+	})
+
+	return err
+}
+
+func convertUserSettingFromRaw(raw *UserSetting) (*storepb.UserSetting, error) {
+	userSetting := &storepb.UserSetting{
+		UserId: raw.UserID,
+		Key:    raw.Key,
+	}
+
+	switch raw.Key {
+	case storepb.UserSettingKey_ACCESS_TOKENS:
+		accessTokensUserSetting := &storepb.AccessTokensUserSetting{}
+		if err := protojsonUnmarshaler.Unmarshal([]byte(raw.Value), accessTokensUserSetting); err != nil {
+			return nil, err
+		}
+		userSetting.Value = &storepb.UserSetting_AccessTokens{AccessTokens: accessTokensUserSetting}
+	case storepb.UserSettingKey_SHORTCUTS:
+		shortcutsUserSetting := &storepb.ShortcutsUserSetting{}
+		if err := protojsonUnmarshaler.Unmarshal([]byte(raw.Value), shortcutsUserSetting); err != nil {
+			return nil, err
+		}
+		userSetting.Value = &storepb.UserSetting_Shortcuts{Shortcuts: shortcutsUserSetting}
+	case storepb.UserSettingKey_LOCALE:
+		userSetting.Value = &storepb.UserSetting_Locale{Locale: raw.Value}
+	case storepb.UserSettingKey_APPEARANCE:
+		userSetting.Value = &storepb.UserSetting_Appearance{Appearance: raw.Value}
+	case storepb.UserSettingKey_MEMO_VISIBILITY:
+		userSetting.Value = &storepb.UserSetting_MemoVisibility{MemoVisibility: raw.Value}
+	default:
+		return nil, nil
+	}
+	return userSetting, nil
+}
+
+func convertUserSettingToRaw(userSetting *storepb.UserSetting) (*UserSetting, error) {
+	raw := &UserSetting{
+		UserID: userSetting.UserId,
+		Key:    userSetting.Key,
+	}
+
+	switch userSetting.Key {
+	case storepb.UserSettingKey_ACCESS_TOKENS:
+		accessTokensUserSetting := userSetting.GetAccessTokens()
+		value, err := protojson.Marshal(accessTokensUserSetting)
+		if err != nil {
+			return nil, err
+		}
+		raw.Value = string(value)
+	case storepb.UserSettingKey_SHORTCUTS:
+		shortcutsUserSetting := userSetting.GetShortcuts()
+		value, err := protojson.Marshal(shortcutsUserSetting)
+		if err != nil {
+			return nil, err
+		}
+		raw.Value = string(value)
+	case storepb.UserSettingKey_LOCALE:
+		raw.Value = userSetting.GetLocale()
+	case storepb.UserSettingKey_APPEARANCE:
+		raw.Value = userSetting.GetAppearance()
+	case storepb.UserSettingKey_MEMO_VISIBILITY:
+		raw.Value = userSetting.GetMemoVisibility()
+	default:
+		return nil, errors.Errorf("unsupported user setting key: %v", userSetting.Key)
+	}
+	return raw, nil
 }
