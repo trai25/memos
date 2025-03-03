@@ -1,12 +1,8 @@
-# Air (hot reload) generated
-.air
-
 # temp folder
 tmp
 
 # Frontend asset
 web/dist
-server/dist
 
 # build folder
 build
@@ -16,4 +12,10 @@ build
 # Jetbrains
 .idea
 
-bin/air
+# Docker Compose Environment File
+.env
+
+dist
+
+# VSCode settings
+.vscode

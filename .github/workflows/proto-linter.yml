@@ -1,4 +1,4 @@
-name: Proto linter
+name: Protobuf Linter
 
 on:
   push:
@@ -6,7 +6,6 @@ on:
   pull_request:
     branches:
       - main
-      - "release/*.*.*"
     paths:
       - "proto/**"
 
@@ -20,6 +19,8 @@ jobs:
           fetch-depth: 0
       - name: Setup buf
         uses: bufbuild/buf-setup-action@v1
+        with:
+          github_token: ${{ github.token }}
       - name: buf lint
         uses: bufbuild/buf-lint-action@v1
         with:
@@ -27,6 +28,6 @@ jobs:
       - name: buf format
         run: |
           if [[ $(buf format -d) ]]; then
-            echo "Run 'buf format -w'"
+            echo "Run 'buf format -d'"
             exit 1
           fi

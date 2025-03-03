@@ -1,14 +1,12 @@
 package sqlite
 
 import (
-	"context"
 	"database/sql"
-	"os"
 
 	"github.com/pkg/errors"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
-	"modernc.org/sqlite"
+
+	// Import the SQLite driver.
+	_ "modernc.org/sqlite"
 
 	"github.com/usememos/memos/server/profile"
 	"github.com/usememos/memos/store"
@@ -54,99 +52,6 @@ func NewDB(profile *profile.Profile) (store.Driver, error) {
 
 func (d *DB) GetDB() *sql.DB {
 	return d.db
-}
-
-func (d *DB) Vacuum(ctx context.Context) error {
-	tx, err := d.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-
-	if err := vacuumImpl(ctx, tx); err != nil {
-		return err
-	}
-
-	if err := tx.Commit(); err != nil {
-		return err
-	}
-
-	// Vacuum sqlite database file size after deleting resource.
-	if _, err := d.db.Exec("VACUUM"); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func vacuumImpl(ctx context.Context, tx *sql.Tx) error {
-	if err := vacuumMemo(ctx, tx); err != nil {
-		return err
-	}
-	if err := vacuumResource(ctx, tx); err != nil {
-		return err
-	}
-	if err := vacuumUserSetting(ctx, tx); err != nil {
-		return err
-	}
-	if err := vacuumMemoOrganizer(ctx, tx); err != nil {
-		return err
-	}
-	if err := vacuumMemoRelations(ctx, tx); err != nil {
-		return err
-	}
-	if err := vacuumTag(ctx, tx); err != nil {
-		// Prevent revive warning.
-		return err
-	}
-
-	return nil
-}
-
-func (d *DB) BackupTo(ctx context.Context, filename string) error {
-	conn, err := d.db.Conn(ctx)
-	if err != nil {
-		return errors.Wrap(err, "fail to open new connection")
-	}
-	defer conn.Close()
-
-	err = conn.Raw(func(driverConn any) error {
-		type backuper interface {
-			NewBackup(string) (*sqlite.Backup, error)
-		}
-		backupConn, ok := driverConn.(backuper)
-		if !ok {
-			return errors.New("db connection is not a sqlite backuper")
-		}
-
-		bck, err := backupConn.NewBackup(filename)
-		if err != nil {
-			return errors.Wrap(err, "fail to create sqlite backup")
-		}
-
-		for more := true; more; {
-			more, err = bck.Step(-1)
-			if err != nil {
-				return errors.Wrap(err, "fail to execute sqlite backup")
-			}
-		}
-
-		return bck.Finish()
-	})
-	if err != nil {
-		return errors.Wrap(err, "fail to backup")
-	}
-
-	return nil
-}
-
-func (d *DB) GetCurrentDBSize(context.Context) (int64, error) {
-	fi, err := os.Stat(d.profile.DSN)
-	if err != nil {
-		return 0, status.Errorf(codes.Internal, "failed to get file info: %v", err)
-	}
-
-	return fi.Size(), nil
 }
 
 func (d *DB) Close() error {

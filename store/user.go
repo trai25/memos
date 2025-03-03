@@ -28,6 +28,20 @@ func (e Role) String() string {
 	return "USER"
 }
 
+const (
+	SystemBotID int32 = 0
+)
+
+var (
+	SystemBot = &User{
+		ID:       SystemBotID,
+		Username: "system_bot",
+		Role:     RoleAdmin,
+		Email:    "",
+		Nickname: "Bot",
+	}
+)
+
 type User struct {
 	ID int32
 
@@ -43,6 +57,7 @@ type User struct {
 	Nickname     string
 	PasswordHash string
 	AvatarURL    string
+	Description  string
 }
 
 type UpdateUser struct {
@@ -57,6 +72,7 @@ type UpdateUser struct {
 	Password     *string
 	AvatarURL    *string
 	PasswordHash *string
+	Description  *string
 }
 
 type FindUser struct {
@@ -66,6 +82,9 @@ type FindUser struct {
 	Role      *Role
 	Email     *string
 	Nickname  *string
+
+	// The maximum number of users to return.
+	Limit *int
 }
 
 type DeleteUser struct {
@@ -106,8 +125,14 @@ func (s *Store) ListUsers(ctx context.Context, find *FindUser) ([]*User, error) 
 
 func (s *Store) GetUser(ctx context.Context, find *FindUser) (*User, error) {
 	if find.ID != nil {
+		if *find.ID == SystemBotID {
+			return SystemBot, nil
+		}
 		if cache, ok := s.userCache.Load(*find.ID); ok {
-			return cache.(*User), nil
+			user, ok := cache.(*User)
+			if ok {
+				return user, nil
+			}
 		}
 	}
 

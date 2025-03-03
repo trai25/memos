@@ -35,14 +35,16 @@ func TestUserStore(t *testing.T) {
 	users, err = ts.ListUsers(ctx, &store.FindUser{})
 	require.NoError(t, err)
 	require.Equal(t, 0, len(users))
+	ts.Close()
 }
 
 func createTestingHostUser(ctx context.Context, ts *store.Store) (*store.User, error) {
 	userCreate := &store.User{
-		Username: "test",
-		Role:     store.RoleHost,
-		Email:    "test@test.com",
-		Nickname: "test_nickname",
+		Username:    "test",
+		Role:        store.RoleHost,
+		Email:       "test@test.com",
+		Nickname:    "test_nickname",
+		Description: "test_description",
 	}
 	passwordHash, err := bcrypt.GenerateFromPassword([]byte("test_password"), bcrypt.DefaultCost)
 	if err != nil {
